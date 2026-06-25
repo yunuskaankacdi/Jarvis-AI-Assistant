@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Jarvis Asistan Merkezi</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* SOL TARAF: Görsel ve Kontroller */
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-right: 2px solid rgba(0, 255, 255, 0.2);
+            transition: all 0.3s;
+        }
+
+        .gif-container {
+            width: 350px;
+            height: 350px;
+            border-radius: 50%;
+            box-shadow: 0 0 50px #00ffff, inset 0 0 30px #00ffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            overflow: hidden;
+            transition: box-shadow 0.3s ease;
+        }
+
+        /* Kırmızı Tema (Paused) Ayarları */
+        .gif-container.paused {
+            box-shadow: 0 0 50px #ff0000, inset 0 0 30px #ff0000;
+        }
+
+        /* Resmi kırmızıya çeviren CSS sihri burada! */
+        .gif-container.paused img {
+            filter: hue-rotate(160deg) saturate(2) brightness(0.8);
+        }
+
+        .gif-container img {
+            width: 110%;
+            height: 110%;
+            object-fit: cover;
+            transition: filter 0.3s ease;
+        }
+
+        .status {
+            margin-top: 30px;
+            font-size: 20px;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px #00ffff;
+            transition: color 0.3s, text-shadow 0.3s;
+        }
+
+        .status.paused {
+            color: #ff0000;
+            text-shadow: 0 0 10px #ff0000;
+        }
+
+        .mic-btn {
+            margin-top: 25px;
+            padding: 12px 25px;
+            background: transparent;
+            color: #00ffff;
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .mic-btn:hover { background: rgba(0, 255, 255, 0.1); }
+        .mic-btn.paused { color: #ff0000; border-color: #ff0000; }
+        .mic-btn.paused:hover { background: rgba(255, 0, 0, 0.1); }
+
+        /* SAĞ TARAF: Siber Chat Paneli */
+        .right-panel {
+            width: 450px;
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .chat-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chat-box::-webkit-scrollbar { width: 8px; }
+        .chat-box::-webkit-scrollbar-track { background: #050505; }
+        .chat-box::-webkit-scrollbar-thumb { background: rgba(0, 255, 255, 0.3); border-radius: 4px; }
+
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 15px;
+            line-height: 1.4;
+        }
+
+        .msg-jarvis {
+            align-self: flex-start;
+            background: rgba(0, 255, 255, 0.1);
+            border-left: 3px solid #00ffff;
+        }
+
+        .input-area {
+            display: flex;
+            padding: 20px;
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .input-area input {
+            flex: 1;
+            background: transparent;
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            color: #fff;
+            padding: 12px;
+            font-family: inherit;
+            border-radius: 4px 0 0 4px;
+            outline: none;
+        }
+
+        .input-area button {
+            background: rgba(0, 255, 255, 0.2);
+            color: #00ffff;
+            border: 1px solid rgba(0, 255, 255, 0.5);
+            border-left: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            border-radius: 0 4px 4px 0;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="left-panel">
+        <div class="gif-container" id="jarvis-core">
+            <img src="{{ url_for('static', filename='jarvis.gif') }}" id="jarvis-img" alt="Jarvis Core">
+        </div>
+        <div class="status" id="status-text">SİSTEM DEVREDE... DİNLİYORUM...</div>
+        <button class="mic-btn" id="mic-toggle">Dinlemeyi Durdur</button>
+    </div>
+
+    <div class="right-panel">
+        <div class="chat-header">SİSTEM GÜNLÜĞÜ VE TERMİNAL</div>
+        <div class="chat-box" id="chat-box">
+            <div class="message msg-jarvis">Arayüz başlatıldı. Hoş geldiniz.</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="text-input" placeholder="Manuel komut giriniz...">
+            <button id="send-btn">Gönder</button>
+        </div>
+    </div>
+
+    <script>
+        const micBtn = document.getElementById('mic-toggle');
+        const jarvisCore = document.getElementById('jarvis-core');
+        const statusText = document.getElementById('status-text');
+        
+        let isListening = true;
+
+        micBtn.addEventListener('click', () => {
+            isListening = !isListening;
+            
+            if (isListening) {
+                micBtn.textContent = "Dinlemeyi Durdur";
+                micBtn.classList.remove("paused");
+                jarvisCore.classList.remove("paused");
+                statusText.classList.remove("paused");
+                statusText.textContent = "SİSTEM DEVREDE... DİNLİYORUM...";
+            } else {
+                micBtn.textContent = "Dinlemeyi Başlat";
+                micBtn.classList.add("paused");
+                jarvisCore.classList.add("paused");
+                statusText.classList.add("paused");
+                statusText.textContent = "SİSTEM BEKLEMEDE... SAĞIR MODU";
+            }
+        });
+
+        const sendBtn = document.getElementById('send-btn');
+        const textInput = document.getElementById('text-input');
+        const chatBox = document.getElementById('chat-box');
+
+        // Mesaj gönderme fonksiyonu
+        function sendMessage() {
+            const msg = textInput.value;
+            if(!msg) return;
+
+            // Kullanıcı mesajını ekrana ekle ve en alta kaydır
+            chatBox.innerHTML += `<div class="message" style="align-self: flex-end; background: rgba(255,255,255,0.1)">${msg}</div>`;
+            textInput.value = "";
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Python'a gönder
+            fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg})
+            })
+            .then(res => res.json())
+            .then(data => {
+                chatBox.innerHTML += `<div class="message msg-jarvis">${data.reply}</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight; // Yanıt gelince tekrar en alta kaydır
+            })
+            .catch(err => {
+                chatBox.innerHTML += `<div class="message msg-jarvis" style="color: red;">Bağlantı hatası: Sisteme ulaşılamıyor.</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+        }
+
+        // Gönder butonuna tıklanması
+        sendBtn.addEventListener('click', sendMessage);
+
+        // Enter tuşuna basılması
+        textInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
