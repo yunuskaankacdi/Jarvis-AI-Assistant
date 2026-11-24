@@ -1,2 +1,1 @@
-templates/** linguist-detectable=false
-static/** linguist-detectable=false
+*.html linguist-vendored
