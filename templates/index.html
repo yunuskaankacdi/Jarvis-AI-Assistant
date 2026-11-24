@@ -186,36 +186,50 @@
         let isListening = true;
 
         micBtn.addEventListener('click', () => {
-            isListening = !isListening;
-            
-            if (isListening) {
-                micBtn.textContent = "Dinlemeyi Durdur";
-                micBtn.classList.remove("paused");
-                jarvisCore.classList.remove("paused");
-                statusText.classList.remove("paused");
-                statusText.textContent = "SİSTEM DEVREDE... DİNLİYORUM...";
-            } else {
-                micBtn.textContent = "Dinlemeyi Başlat";
-                micBtn.classList.add("paused");
-                jarvisCore.classList.add("paused");
-                statusText.classList.add("paused");
-                statusText.textContent = "SİSTEM BEKLEMEDE... SAĞIR MODU";
-            }
+            fetch('/toggle-mic', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    isListening = data.listening;
+                    if (isListening) {
+                        micBtn.textContent = "Dinlemeyi Durdur";
+                        micBtn.classList.remove("paused");
+                        jarvisCore.classList.remove("paused");
+                        statusText.classList.remove("paused");
+                        statusText.textContent = "SİSTEM DEVREDE... DİNLİYORUM...";
+                    } else {
+                        micBtn.textContent = "Dinlemeyi Başlat";
+                        micBtn.classList.add("paused");
+                        jarvisCore.classList.add("paused");
+                        statusText.classList.add("paused");
+                        statusText.textContent = "SİSTEM BEKLEMEDE... SAĞIR MODU";
+                    }
+                })
+                .catch(() => {});
         });
 
         const sendBtn = document.getElementById('send-btn');
         const textInput = document.getElementById('text-input');
         const chatBox = document.getElementById('chat-box');
 
+        function appendMessage(text, isJarvis) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = isJarvis ? 'message msg-jarvis' : 'message';
+            if (!isJarvis) {
+                msgDiv.style.alignSelf = 'flex-end';
+                msgDiv.style.background = 'rgba(255,255,255,0.1)';
+            }
+            msgDiv.textContent = text;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
         // Mesaj gönderme fonksiyonu
         function sendMessage() {
-            const msg = textInput.value;
-            if(!msg) return;
+            const msg = textInput.value.trim();
+            if (!msg) return;
 
-            // Kullanıcı mesajını ekrana ekle ve en alta kaydır
-            chatBox.innerHTML += `<div class="message" style="align-self: flex-end; background: rgba(255,255,255,0.1)">${msg}</div>`;
+            appendMessage(msg, false);
             textInput.value = "";
-            chatBox.scrollTop = chatBox.scrollHeight;
 
             // Python'a gönder
             fetch('/chat', {
@@ -225,11 +239,14 @@
             })
             .then(res => res.json())
             .then(data => {
-                chatBox.innerHTML += `<div class="message msg-jarvis">${data.reply}</div>`;
-                chatBox.scrollTop = chatBox.scrollHeight; // Yanıt gelince tekrar en alta kaydır
+                appendMessage(data.reply, true);
             })
-            .catch(err => {
-                chatBox.innerHTML += `<div class="message msg-jarvis" style="color: red;">Bağlantı hatası: Sisteme ulaşılamıyor.</div>`;
+            .catch(() => {
+                const errDiv = document.createElement('div');
+                errDiv.className = 'message msg-jarvis';
+                errDiv.style.color = 'red';
+                errDiv.textContent = 'Bağlantı hatası: Sisteme ulaşılamıyor.';
+                chatBox.appendChild(errDiv);
                 chatBox.scrollTop = chatBox.scrollHeight;
             });
         }
