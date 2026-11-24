@@ -6,13 +6,20 @@ import os
 import webbrowser
 from openai import OpenAI
 import fitz
+from urllib.parse import quote_plus
 from flask import Flask, render_template, request, jsonify
 import threading
+import time
 
 pygame.mixer.init()
 
 # Web sunucusunu başlatıyoruz
 app = Flask(__name__)
+
+# Eşzamanlı ses çalma çakışmalarını ve mikrofon durumunu yöneten senkronizasyon nesneleri
+tts_lock = threading.Lock()
+is_listening = threading.Event()
+is_listening.set()
 
 # Yerel Ollama (Llama 3) bağlantısı
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="bedava-jarvis")
@@ -20,29 +27,30 @@ client = OpenAI(base_url="http://localhost:11434/v1", api_key="bedava-jarvis")
 def konus(metin):
     """Metni Microsoft'un ultra gerçekçi Neural AI sesiyle okur."""
     ses_dosyasi = "jarvis_ses.mp3"
-    
-    async def ses_olustur():
-        communicate = edge_tts.Communicate(metin, "tr-TR-AhmetNeural", rate="+10%")
-        await communicate.save(ses_dosyasi)
-    
-    asyncio.run(ses_olustur())
-    
-    try:
-        pygame.mixer.music.load(ses_dosyasi)
-        pygame.mixer.music.play()
-        
-        while pygame.mixer.music.get_busy():
-            pygame.time.Clock().tick(10)
-            
-        pygame.mixer.music.unload()
-    except Exception as e:
-        print(f"Ses çalma hatası: {e}")
-    finally:
-        if os.path.exists(ses_dosyasi):
-            try:
-                os.remove(ses_dosyasi)
-            except:
-                pass
+
+    with tts_lock:
+        async def ses_olustur():
+            communicate = edge_tts.Communicate(metin, "tr-TR-AhmetNeural", rate="+10%")
+            await communicate.save(ses_dosyasi)
+
+        asyncio.run(ses_olustur())
+
+        try:
+            pygame.mixer.music.load(ses_dosyasi)
+            pygame.mixer.music.play()
+
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
+
+            pygame.mixer.music.unload()
+        except Exception as e:
+            print(f"Ses çalma hatası: {e}")
+        finally:
+            if os.path.exists(ses_dosyasi):
+                try:
+                    os.remove(ses_dosyasi)
+                except OSError:
+                    pass
 
 def dinle():
     r = sr.Recognizer()
@@ -117,12 +125,16 @@ def hedef_site_bul(komut):
     if not arama_terimi:
         return "https://www.google.com", "Google"
         
-    arama_linki = f"https://www.google.com/search?q={arama_terimi}"
+    arama_linki = f"https://www.google.com/search?q={quote_plus(arama_terimi)}"
     return arama_linki, f"'{arama_terimi}' araması"
 
 def ana_dongu():
     konus("Sistem devrede. Arayüz başlatıldı.")
     while True:
+        if not is_listening.is_set():
+            time.sleep(0.3)
+            continue
+
         komut = dinle()
         if not komut:
             continue
@@ -165,21 +177,31 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.json
-    kullanici_mesaji = data.get("message")
-    
+    data = request.get_json(silent=True) or {}
+    kullanici_mesaji = (data.get("message") or "").strip()
+    if not kullanici_mesaji:
+        return jsonify({"reply": "Lütfen boş bir mesaj göndermeyin."}), 400
+
     cevap = yapay_zeka_yaniti(kullanici_mesaji)
     konus(cevap)
-    
+
     return jsonify({"reply": cevap})
+
+@app.route("/toggle-mic", methods=["POST"])
+def toggle_mic():
+    if is_listening.is_set():
+        is_listening.clear()
+    else:
+        is_listening.set()
+    return jsonify({"listening": is_listening.is_set()})
 
 if __name__ == "__main__":
     jarvis_thread = threading.Thread(target=ana_dongu)
     jarvis_thread.daemon = True
     jarvis_thread.start()
-    
-    webbrowser.open("http://localhost:5000")
+
+    webbrowser.open("http://127.0.0.1:5000")
     print("Arayüz otomatik olarak başlatıldı.")
-    
-    # Debug False ile Flask'ı başlatıyoruz
-    app.run(host="0.0.0.0", port=5000, debug=False)
+
+    # Yalnızca yerel erişime açık olacak şekilde Flask'ı başlatıyoruz
+    app.run(host="127.0.0.1", port=5000, debug=False)
